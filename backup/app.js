@@ -126,19 +126,16 @@ function toggleRegionSelection() {
 function onMouseDown(e) {
     if (!isSelectingRegion || !isRunning) return;
     
-    e.preventDefault();
     const rect = canvas.getBoundingClientRect();
     const x = (e.clientX - rect.left) * (canvas.width / rect.width);
     const y = (e.clientY - rect.top) * (canvas.height / rect.height);
     
     selectionStart = { x, y };
-    selectionRect = null; // Reset selection
 }
 
 function onMouseMove(e) {
     if (!isSelectingRegion || !selectionStart || !isRunning) return;
     
-    e.preventDefault();
     const rect = canvas.getBoundingClientRect();
     const x = (e.clientX - rect.left) * (canvas.width / rect.width);
     const y = (e.clientY - rect.top) * (canvas.height / rect.height);
@@ -154,7 +151,6 @@ function onMouseMove(e) {
 function onMouseUp(e) {
     if (!isSelectingRegion || !selectionStart || !isRunning) return;
     
-    e.preventDefault();
     const rect = canvas.getBoundingClientRect();
     const x = (e.clientX - rect.left) * (canvas.width / rect.width);
     const y = (e.clientY - rect.top) * (canvas.height / rect.height);
@@ -173,10 +169,6 @@ function onMouseUp(e) {
         document.getElementById('selectRegionBtn').textContent = 'Select Region';
         document.getElementById('selectRegionBtn').style.background = '#2196F3';
         updateStatus('Region selected. Tracking started.');
-    } else {
-        // Selection too small, reset
-        selectionRect = null;
-        updateStatus('Selection too small. Try again.');
     }
     
     selectionStart = null;
@@ -202,7 +194,7 @@ function captureTemplate(rect) {
     src.delete();
 }
 
-async function loadSAM2File() {
+function loadSAM2File() {
     const fileInput = document.getElementById('sam2File');
     const file = fileInput.files[0];
     
@@ -212,16 +204,15 @@ async function loadSAM2File() {
     }
     
     const reader = new FileReader();
-    reader.onload = async function(e) {
+    reader.onload = function(e) {
         try {
-            updateStatus('Loading SAM2 file...');
-            await tracker.loadSAM2Data(e.target.result);
-            
-            const maskCount = tracker.sam2Masks ? tracker.sam2Masks.length : 0;
-            updateStatus(`SAM2 file loaded: ${maskCount} mask(s) ready`);
+            // Note: Full NPZ parsing would require a library like numpy-loader
+            // For now, we'll store the file data
+            tracker.loadSAM2Data(e.target.result);
+            updateStatus('SAM2 file loaded (Note: Full NPZ parsing requires additional library)');
         } catch (err) {
             console.error('Error loading SAM2 file:', err);
-            updateStatus('Error loading SAM2 file: ' + err.message);
+            updateStatus('Error loading SAM2 file');
         }
     };
     reader.readAsArrayBuffer(file);
@@ -241,53 +232,33 @@ function processVideo() {
         const src = cv.matFromImageData(imageData);
         const dst = src.clone();
         
-        // Process with tracker (only if not selecting region or if template is set)
-        let tracked = false;
-        if (!isSelectingRegion || tracker.template) {
-            tracked = tracker.processFrame(src, dst);
-        }
+        // Process with tracker
+        const tracked = tracker.processFrame(src, dst);
         
-        // Convert back to image data and draw
-        cv.imshow(canvas, dst);
-        
-        // Draw selection rectangle on top (after OpenCV processing)
+        // Draw selection rectangle if selecting
         if (isSelectingRegion && selectionRect) {
             ctx.strokeStyle = 'yellow';
-            ctx.fillStyle = 'rgba(255, 255, 0, 0.2)';
-            ctx.lineWidth = 3;
-            ctx.setLineDash([5, 5]);
-            ctx.fillRect(
-                selectionRect.x,
-                selectionRect.y,
-                selectionRect.width,
-                selectionRect.height
-            );
+            ctx.lineWidth = 2;
             ctx.strokeRect(
                 selectionRect.x,
                 selectionRect.y,
                 selectionRect.width,
                 selectionRect.height
             );
-            ctx.setLineDash([]);
         }
+        
+        // Convert back to image data and draw
+        cv.imshow(canvas, dst);
         
         // Clean up
         src.delete();
         dst.delete();
         
         // Update status
-        if (isSelectingRegion) {
-            if (selectionRect) {
-                updateStatus('Drag to adjust selection, release to confirm');
-            } else {
-                updateStatus('Click and drag on video to select region');
-            }
-        } else if (tracked) {
+        if (tracked) {
             updateStatus('Tracking: Object detected');
-        } else if (tracker.template) {
-            updateStatus('Tracking: Searching...');
         } else {
-            updateStatus('Ready');
+            updateStatus('Tracking: Searching...');
         }
     } catch (err) {
         console.error('Processing error:', err);
